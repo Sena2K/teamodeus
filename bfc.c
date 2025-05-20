@@ -1,5 +1,3 @@
-// bfc.c - Compilador Brainfuck para expressões simples com UTF-8 no nome da variável
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,13 +7,14 @@
 #define MAX_TERMS 100
 
 typedef struct {
-    int is_mul;   // 1 = termo A*B, 0 = termo único
-    int a, b;     // caso is_mul==1
-    int val;      // caso is_mul==0
+    int sign;     // 1 para positivo, -1 para negativo
+    int is_mul;   // 1 se for multiplicação, 0 caso contrário
+    int is_div;   // 1 se for divisão, 0 caso contrário
+    int a, b;     // operandos para multiplicação ou divisão
+    int val;      // valor para termo único
 } Term;
 
 void trim(char *s) {
-    // remove espaços e tabs
     char *p = s, *w = s;
     while (*p) {
         if (!isspace((unsigned char)*p)) *w++ = *p;
@@ -26,15 +25,11 @@ void trim(char *s) {
 
 int main() {
     char line[MAX_LINE];
-    if (!fgets(line, sizeof(line), stdin))
-        return 0;
+    if (!fgets(line, sizeof(line), stdin)) return 0;
 
-    // retira newline
     char *nl = strchr(line, '\n');
-    if (nl)
-        *nl = '\0';
+    if (nl) *nl = '\0';
 
-    // pega a parte antes do '=' para varname, sem cortar no meio do UTF-8
     char varname[MAX_LINE];
     int varlen = 0;
     while (line[varlen] != '=' && line[varlen] != '\0') varlen++;
@@ -42,51 +37,65 @@ int main() {
     varname[varlen] = '\0';
     trim(varname);
 
-    // parte depois do '='
     char expr[MAX_LINE];
     char *eq = strchr(line, '=');
-    if (!eq) return 1;
-    strcpy(expr, eq+1);
+    if (!eq) return 1;  // Fixed line 42
+    strcpy(expr, eq + 1);
     trim(expr);
 
-    // quebra termos por '+'
     Term terms[MAX_TERMS];
     int term_count = 0;
     char *p = expr;
-    while (1) {
-        char *plus = strchr(p, '+');
-        char piece[MAX_LINE];
-        if (plus) {
-            int len = plus - p;
-            strncpy(piece, p, len);
-            piece[len] = '\0';
-        } else {
-            strcpy(piece, p);
-        }
-        trim(piece);
+    int sign = 1;
 
-        // detecta multiplicação A*B
-        char *mul = strchr(piece, '*');
+    while (*p) {
+        while (*p == ' ') p++;
+        if (*p == '+' || *p == '-') {
+            sign = (*p == '+') ? 1 : -1;
+            p++;
+            continue;
+        }
+        char *term_start = p;
+        while (*p && *p != '+' && *p != '-') p++;
+        char term[MAX_LINE];
+        strncpy(term, term_start, p - term_start);
+        term[p - term_start] = '\0';
+        trim(term);
+        if (strlen(term) == 0) continue;
+
+        char *mul = strchr(term, '*');
+        char *div = strchr(term, '/');
         if (mul) {
             *mul = '\0';
             char left[MAX_LINE], right[MAX_LINE];
-            strcpy(left, piece);
-            strcpy(right, mul+1);
+            strcpy(left, term);
+            strcpy(right, mul + 1);
             trim(left); trim(right);
             terms[term_count].is_mul = 1;
+            terms[term_count].is_div = 0;
             terms[term_count].a = atoi(left);
             terms[term_count].b = atoi(right);
+            terms[term_count].sign = sign;
+        } else if (div) {
+            *div = '\0';
+            char left[MAX_LINE], right[MAX_LINE];
+            strcpy(left, term);
+            strcpy(right, div + 1);
+            trim(left); trim(right);
+            terms[term_count].is_mul = 0;
+            terms[term_count].is_div = 1;
+            terms[term_count].a = atoi(left);
+            terms[term_count].b = atoi(right);
+            terms[term_count].sign = sign;
         } else {
             terms[term_count].is_mul = 0;
-            terms[term_count].val = atoi(piece);
+            terms[term_count].is_div = 0;
+            terms[term_count].val = atoi(term);
+            terms[term_count].sign = sign;
         }
         term_count++;
-        if (!plus) break;
-        p = plus+1;
     }
 
-    // imprime nome da variável byte a byte em Brainfuck
-    // Cada byte do UTF-8 vira um caractere pra imprimir
     for (int i = 0; i < (int)strlen(varname); i++) {
         unsigned char c = (unsigned char)varname[i];
         printf(">");
@@ -94,38 +103,55 @@ int main() {
         printf(".");
     }
     printf(">");
-    for (int i = 0; i < 61; i++) printf("+"); // imprime o '=' fixo (61 = código ASCII '=')
+    for (int i = 0; i < 61; i++) printf("+");
     printf(".");
     for (int i = 0; i < (int)strlen(varname) + 1; i++) printf("<");
-
-    // zera cell 0
     printf("[-]");
 
-    // para cada termo:
-    // • se for número, adiciona '+' v vezes em cell0
-    // • se for A*B, usa cell1 para o loop de multiplicação
     for (int i = 0; i < term_count; i++) {
         if (terms[i].is_mul) {
             int A = terms[i].a;
             int B = terms[i].b;
-            // vai para cell1 e zera
-            printf(">");
+            int S = terms[i].sign;
+            printf(">");  // Fixed printf statement
             printf("[-]");
-            // coloca B em cell1
             for (int j = 0; j < B; j++) printf("+");
-            // para cada unidade em cell1, soma A em cell0
             printf("[<");
-            for (int j = 0; j < A; j++) printf("+");
+            if (S == 1) {
+                for (int j = 0; j < A; j++) printf("+");
+            } else {
+                for (int j = 0; j < A; j++) printf("-");
+            }
             printf(">-]");
-            // volta para cell0
             printf("<");
+        } else if (terms[i].is_div) {
+            int A = terms[i].a;
+            int B = terms[i].b;
+            int S = terms[i].sign;
+            printf(">>[-]");
+            for (int j = 0; j < A; j++) printf("+");
+            printf(">[-]");
+            for (int j = 0; j < B; j++) printf("+");
+            printf(">[-]");
+            printf("<<[");
+            printf(">[-");
+            for (int j = 0; j < B; j++) printf("-");
+            printf(">>+<<]");
+            printf(">>[-]<<<<]");
+            printf(">>[<<");
+            if (S == 1) printf("+"); else printf("-");
+            printf(">>-]");
+            printf("<<");
         } else {
             int V = terms[i].val;
-            // permanece em cell0 e soma V
-            for (int j = 0; j < V; j++) printf("+");
+            int S = terms[i].sign;
+            if (S == 1) {
+                for (int j = 0; j < V; j++) printf("+");
+            } else {
+                for (int j = 0; j < V; j++) printf("-");
+            }
         }
     }
 
-    // não imprimimos '\n' no compilador
     return 0;
 }
