@@ -5,22 +5,22 @@
 
 #define MAX_LINE 1024
 #define MAX_TERMS 100
+#define MAX_LOOP 1000  
 
 typedef struct {
-    int sign;     // 1 para positivo, -1 para negativo
-    int is_mul;   // 1 se for multiplicação, 0 caso contrário
-    int is_div;   // 1 se for divisão, 0 caso contrário
-    int a, b;     // operandos para multiplicação ou divisão
-    int val;      // valor para termo único
+    int sign;     
+    int is_mul;   
+    int is_div;   
+    int a, b;     
+    int val;      
 } Term;
 
 void trim(char *s) {
-    char *p = s, *w = s;
-    while (*p) {
-        if (!isspace((unsigned char)*p)) *w++ = *p;
-        p++;
-    }
-    *w = '\0';
+    char *start = s;
+    while (isspace((unsigned char)*start)) start++;
+    if (start != s) memmove(s, start, strlen(start) + 1);
+    char *end = s + strlen(s) - 1;
+    while (end >= s && isspace((unsigned char)*end)) *end-- = '\0';
 }
 
 int main() {
@@ -31,15 +31,16 @@ int main() {
     if (nl) *nl = '\0';
 
     char varname[MAX_LINE];
-    int varlen = 0;
+    size_t varlen = 0;
     while (line[varlen] != '=' && line[varlen] != '\0') varlen++;
+    if (varlen >= MAX_LINE) varlen = MAX_LINE - 1;
     strncpy(varname, line, varlen);
     varname[varlen] = '\0';
     trim(varname);
 
     char expr[MAX_LINE];
     char *eq = strchr(line, '=');
-    if (!eq) return 1;  // Fixed line 42
+    if (!eq) return 1;  
     strcpy(expr, eq + 1);
     trim(expr);
 
@@ -48,7 +49,7 @@ int main() {
     char *p = expr;
     int sign = 1;
 
-    while (*p) {
+    while (*p && term_count < MAX_TERMS) {
         while (*p == ' ') p++;
         if (*p == '+' || *p == '-') {
             sign = (*p == '+') ? 1 : -1;
@@ -58,8 +59,10 @@ int main() {
         char *term_start = p;
         while (*p && *p != '+' && *p != '-') p++;
         char term[MAX_LINE];
-        strncpy(term, term_start, p - term_start);
-        term[p - term_start] = '\0';
+        size_t len = p - term_start;
+        if (len >= MAX_LINE) len = MAX_LINE - 1;
+        strncpy(term, term_start, len);
+        term[len] = '\0';
         trim(term);
         if (strlen(term) == 0) continue;
 
@@ -96,16 +99,16 @@ int main() {
         term_count++;
     }
 
-    for (int i = 0; i < (int)strlen(varname); i++) {
+    for (size_t i = 0; i < strlen(varname); i++) {
         unsigned char c = (unsigned char)varname[i];
         printf(">");
-        for (int j = 0; j < c; j++) printf("+");
+        for (int j = 0; j < c && j < MAX_LOOP; j++) printf("+");
         printf(".");
     }
     printf(">");
     for (int i = 0; i < 61; i++) printf("+");
     printf(".");
-    for (int i = 0; i < (int)strlen(varname) + 1; i++) printf("<");
+    for (size_t i = 0; i < strlen(varname) + 1; i++) printf("<");
     printf("[-]");
 
     for (int i = 0; i < term_count; i++) {
@@ -113,38 +116,58 @@ int main() {
             int A = terms[i].a;
             int B = terms[i].b;
             int S = terms[i].sign;
-            printf(">");  // Fixed printf statement
-            printf("[-]");
-            for (int j = 0; j < B; j++) printf("+");
+            if (A < 0) A = -A, S = -S;
+            if (B < 0) B = -B, S = -S;
+            if (A > MAX_LOOP) A = MAX_LOOP;
+            if (B > MAX_LOOP) B = MAX_LOOP;
+
+         
+            printf(">[-]");          
+            for (int j = 0; j < B; j++) printf("+"); 
             printf("[<");
-            if (S == 1) {
-                for (int j = 0; j < A; j++) printf("+");
-            } else {
-                for (int j = 0; j < A; j++) printf("-");
+            for (int j = 0; j < A; j++) {
+                printf(S == 1 ? "+" : "-");
             }
-            printf(">-]");
+            printf("> -]");
             printf("<");
         } else if (terms[i].is_div) {
+
             int A = terms[i].a;
             int B = terms[i].b;
             int S = terms[i].sign;
-            printf(">>[-]");
-            for (int j = 0; j < A; j++) printf("+");
-            printf(">[-]");
-            for (int j = 0; j < B; j++) printf("+");
-            printf(">[-]");
-            printf("<<[");
-            printf(">[-");
-            for (int j = 0; j < B; j++) printf("-");
-            printf(">>+<<]");
-            printf(">>[-]<<<<]");
-            printf(">>[<<");
-            if (S == 1) printf("+"); else printf("-");
-            printf(">>-]");
-            printf("<<");
+            if (A < 0) A = -A, S = -S;
+            if (B < 0) B = -B, S = -S;
+            if (A > MAX_LOOP) A = MAX_LOOP;
+            if (B > MAX_LOOP || B == 0) B = 1; 
+
+            printf(">>[-]");          
+            for (int j = 0; j < A; j++) printf("+"); 
+            printf(">[-]");            
+            printf(">[-]");            
+
+
+            printf("<<[");            
+            printf(">[-");            
+            for (int j = 0; j < B; j++) printf("-"); 
+            printf(">>+<<]");        
+            printf(">>[-]");         
+
+            printf(">>]");
+
+        
+            printf(">>");             
+            if (S == 1) {
+                printf("[>+<-]");     
+            } else {
+                printf("[>-<-]");     
+            }
+            printf("<<");             
         } else {
             int V = terms[i].val;
             int S = terms[i].sign;
+            if (V < 0) V = -V, S = -S;
+            if (V > MAX_LOOP) V = MAX_LOOP;
+
             if (S == 1) {
                 for (int j = 0; j < V; j++) printf("+");
             } else {
@@ -153,5 +176,6 @@ int main() {
         }
     }
 
+    printf("\n"); 
     return 0;
 }
