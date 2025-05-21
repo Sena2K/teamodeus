@@ -1,119 +1,90 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-#define MEMORY_SIZE 30000
-#define MAX_CODE_SIZE 100000
-#define MAX_NESTED_LOOPS 100
+#define TAPE_SIZE 30000
+#define MAX_PROGRAM 100000
+#define MAX_LOOP_DEPTH 100
 
-// Interpretador de Brainfuck
-int execute_brainfuck(const char* code) {
-    unsigned char memory[MEMORY_SIZE] = {0};
-    int ptr = 0;
-    int code_pos = 0;
-    int loop_stack[MAX_NESTED_LOOPS];
-    int loop_index = 0;
-    
-    while (code[code_pos] != '\0') {
-        switch (code[code_pos]) {
-            case '>':
-                ptr++;
-                if (ptr >= MEMORY_SIZE) {
-                    fprintf(stderr, "Erro: Ponteiro fora dos limites de memória (para frente)\n");
-                    return 1;
-                }
-                break;
-                
-            case '<':
-                ptr--;
-                if (ptr < 0) {
-                    fprintf(stderr, "Erro: Ponteiro fora dos limites de memória (para trás)\n");
-                    return 1;
-                }
-                break;
-                
-            case '+':
-                memory[ptr]++;
-                break;
-                
-            case '-':
-                memory[ptr]--;
-                break;
-                
-            case '.':
-                putchar(memory[ptr]);
-                break;
-                
-            case ',':
-                memory[ptr] = getchar();
-                break;
-                
-            case '[':
-                if (memory[ptr] == 0) {
-                    // Pula para o correspondente ]
-                    int depth = 1;
-                    while (depth > 0) {
-                        code_pos++;
-                        if (code[code_pos] == '[') {
-                            depth++;
-                        } else if (code[code_pos] == ']') {
-                            depth--;
-                        }
-                        
-                        if (code[code_pos] == '\0') {
-                            fprintf(stderr, "Erro: Loop não fechado\n");
-                            return 1;
-                        }
-                    }
-                } else {
-                    if (loop_index >= MAX_NESTED_LOOPS) {
-                        fprintf(stderr, "Erro: Loops aninhados demais\n");
+int run_bf(const char *program) {
+    unsigned char tape[TAPE_SIZE] = {0};
+    int pointer = 0;
+    int ip = 0;
+    int loop_stack[MAX_LOOP_DEPTH];
+    int stack_ptr = 0;
+
+    while (program[ip]) {
+        char instr = program[ip];
+
+        if (instr == '>') {
+            pointer++;
+            if (pointer >= TAPE_SIZE) {
+                fprintf(stderr, "Pointer overflow\n");
+                return 1;
+            }
+        } else if (instr == '<') {
+            pointer--;
+            if (pointer < 0) {
+                fprintf(stderr, "Pointer underflow\n");
+                return 1;
+            }
+        } else if (instr == '+') {
+            tape[pointer]++;
+        } else if (instr == '-') {
+            tape[pointer]--;
+        } else if (instr == '.') {
+            putchar(tape[pointer]);
+        } else if (instr == ',') {
+            int input = getchar();
+            tape[pointer] = (input == EOF) ? 0 : (unsigned char)input;
+        } else if (instr == '[') {
+            if (tape[pointer] == 0) {
+                int level = 1;
+                while (level > 0) {
+                    ip++;
+                    if (program[ip] == '\0') {
+                        fprintf(stderr, "Unmatched '['\n");
                         return 1;
                     }
-                    loop_stack[loop_index++] = code_pos;
+                    if (program[ip] == '[') level++;
+                    if (program[ip] == ']') level--;
                 }
-                break;
-                
-            case ']':
-                if (loop_index <= 0) {
-                    fprintf(stderr, "Erro: ']' sem correspondente '['\n");
+            } else {
+                if (stack_ptr >= MAX_LOOP_DEPTH) {
+                    fprintf(stderr, "Loop stack overflow\n");
                     return 1;
                 }
-                
-                if (memory[ptr] != 0) {
-                    code_pos = loop_stack[loop_index - 1];
-                } else {
-                    loop_index--;
-                }
-                break;
+                loop_stack[stack_ptr++] = ip;
+            }
+        } else if (instr == ']') {
+            if (stack_ptr == 0) {
+                fprintf(stderr, "Unmatched ']'\n");
+                return 1;
+            }
+            if (tape[pointer] != 0) {
+                ip = loop_stack[stack_ptr - 1];
+            } else {
+                stack_ptr--;
+            }
         }
-        
-        code_pos++;
+        ip++;
     }
 
-    int result = memory[0];
-    printf("%d\n", result);
-    
+    printf("%d\n", tape[0]);
     return 0;
 }
 
 int main() {
-    char code[MAX_CODE_SIZE];
-    int pos = 0;
-    int c;
-    
-    // Lê o código Brainfuck da entrada padrão
-    while ((c = getchar()) != EOF && pos < MAX_CODE_SIZE - 1) {
-        // Apenas caracteres válidos de Brainfuck são armazenados
-        if (c == '>' || c == '<' || c == '+' || c == '-' || 
-            c == '.' || c == ',' || c == '[' || c == ']') {
-            code[pos++] = c;
+    char program[MAX_PROGRAM];
+    int idx = 0;
+    int ch;
+
+    while ((ch = getchar()) != EOF && idx < MAX_PROGRAM - 1) {
+        if (ch == '>' || ch == '<' || ch == '+' || ch == '-' ||
+            ch == '.' || ch == ',' || ch == '[' || ch == ']') {
+            program[idx++] = (char)ch;
         }
     }
-    code[pos] = '\0';
-    
-    // Executa o código Brainfuck
-    execute_brainfuck(code);
-    
-    return 0;
+    program[idx] = '\0';
+
+    return run_bf(program);
 }

@@ -5,28 +5,126 @@
 
 #define MAX_LINE 1024
 #define MAX_TERMS 100
-#define MAX_LOOP 1000  
+#define MAX_LOOP 1000
 
 typedef struct {
-    int sign;     
-    int is_mul;   
-    int is_div;   
-    int a, b;     
-    int val;      
+    int sign;
+    int is_mul;
+    int is_div;
+    int left;
+    int right;
 } Term;
 
-void trim(char *s) {
-    char *start = s;
+void trim_whitespace(char *str) {
+    char *start = str;
     while (isspace((unsigned char)*start)) start++;
-    if (start != s) memmove(s, start, strlen(start) + 1);
-    char *end = s + strlen(s) - 1;
-    while (end >= s && isspace((unsigned char)*end)) *end-- = '\0';
+    if (start != str) memmove(str, start, strlen(start) + 1);
+    char *end = str + strlen(str) - 1;
+    while (end >= str && isspace((unsigned char)*end)) *end-- = '\0';
+}
+
+int parse_term(const char *term_str, Term *term, int sign) {
+    const char *mul_pos = strchr(term_str, '*');
+    const char *div_pos = strchr(term_str, '/');
+
+    if (mul_pos) {
+        char left[MAX_LINE], right[MAX_LINE];
+        strncpy(left, term_str, mul_pos - term_str);
+        left[mul_pos - term_str] = '\0';
+        strcpy(right, mul_pos + 1);
+        trim_whitespace(left);
+        trim_whitespace(right);
+        term->is_mul = 1;
+        term->is_div = 0;
+        term->left = atoi(left);
+        term->right = atoi(right);
+        term->sign = sign;
+        return 1;
+    } else if (div_pos) {
+        char left[MAX_LINE], right[MAX_LINE];
+        strncpy(left, term_str, div_pos - term_str);
+        left[div_pos - term_str] = '\0';
+        strcpy(right, div_pos + 1);
+        trim_whitespace(left);
+        trim_whitespace(right);
+        term->is_mul = 0;
+        term->is_div = 1;
+        term->left = atoi(left);
+        term->right = atoi(right);
+        term->sign = sign;
+        return 1;
+    } else {
+        trim_whitespace((char *)term_str);
+        term->is_mul = 0;
+        term->is_div = 0;
+        term->left = atoi(term_str);
+        term->right = 0;
+        term->sign = sign;
+        return 1;
+    }
+}
+
+void generate_varname_bf(const char *varname) {
+    size_t len = strlen(varname);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)varname[i];
+        printf(">");
+        int loop_limit = (c > MAX_LOOP) ? MAX_LOOP : c;
+        for (int j = 0; j < loop_limit; j++) printf("+");
+        printf(".");
+    }
+    printf(">");
+    for (int i = 0; i < 61; i++) printf("+");
+    printf(".");
+    for (size_t i = 0; i < len + 1; i++) printf("<");
+    printf("[-]");
+}
+
+void generate_mul_bf(int a, int b, int sign) {
+    if (a < 0) { a = -a; sign = -sign; }
+    if (b < 0) { b = -b; sign = -sign; }
+    if (a > MAX_LOOP) a = MAX_LOOP;
+    if (b > MAX_LOOP) b = MAX_LOOP;
+
+    printf(">[-]");
+    for (int i = 0; i < b; i++) printf("+");
+    printf("[<");
+    for (int i = 0; i < a; i++) printf("%c", sign == 1 ? '+' : '-');
+    printf("> -]");
+    printf("<");
+}
+
+void generate_div_bf(int a, int b, int sign) {
+    if (a < 0) { a = -a; sign = -sign; }
+    if (b <= 0) b = 1;
+    if (a > MAX_LOOP) a = MAX_LOOP;
+    if (b > MAX_LOOP) b = MAX_LOOP;
+
+    printf(">>[-]");
+    for (int i = 0; i < a; i++) printf("+");
+    printf(">[-]");
+    printf(">[-]");
+    printf("<<[");
+    printf(">[-");
+    for (int i = 0; i < b; i++) printf("-");
+    printf(">>+<<]");
+    printf(">>[-]");
+    printf(">>]");
+    printf(">>");
+    if (sign == 1) printf("[>+<-]");
+    else printf("[>-<-]");
+    printf("<<");
+}
+
+void generate_val_bf(int val, int sign) {
+    if (val < 0) { val = -val; sign = -sign; }
+    if (val > MAX_LOOP) val = MAX_LOOP;
+    for (int i = 0; i < val; i++) printf("%c", sign == 1 ? '+' : '-');
 }
 
 int main() {
     char line[MAX_LINE];
     if (!fgets(line, sizeof(line), stdin)) return 0;
-
     char *nl = strchr(line, '\n');
     if (nl) *nl = '\0';
 
@@ -36,146 +134,53 @@ int main() {
     if (varlen >= MAX_LINE) varlen = MAX_LINE - 1;
     strncpy(varname, line, varlen);
     varname[varlen] = '\0';
-    trim(varname);
+    trim_whitespace(varname);
 
-    char expr[MAX_LINE];
     char *eq = strchr(line, '=');
-    if (!eq) return 1;  
+    if (!eq) return 1;
+    char expr[MAX_LINE];
     strcpy(expr, eq + 1);
-    trim(expr);
+    trim_whitespace(expr);
 
     Term terms[MAX_TERMS];
     int term_count = 0;
     char *p = expr;
-    int sign = 1;
+    int current_sign = 1;
 
     while (*p && term_count < MAX_TERMS) {
         while (*p == ' ') p++;
         if (*p == '+' || *p == '-') {
-            sign = (*p == '+') ? 1 : -1;
+            current_sign = (*p == '+') ? 1 : -1;
             p++;
             continue;
         }
         char *term_start = p;
         while (*p && *p != '+' && *p != '-') p++;
-        char term[MAX_LINE];
+        char term_str[MAX_LINE];
         size_t len = p - term_start;
         if (len >= MAX_LINE) len = MAX_LINE - 1;
-        strncpy(term, term_start, len);
-        term[len] = '\0';
-        trim(term);
-        if (strlen(term) == 0) continue;
-
-        char *mul = strchr(term, '*');
-        char *div = strchr(term, '/');
-        if (mul) {
-            *mul = '\0';
-            char left[MAX_LINE], right[MAX_LINE];
-            strcpy(left, term);
-            strcpy(right, mul + 1);
-            trim(left); trim(right);
-            terms[term_count].is_mul = 1;
-            terms[term_count].is_div = 0;
-            terms[term_count].a = atoi(left);
-            terms[term_count].b = atoi(right);
-            terms[term_count].sign = sign;
-        } else if (div) {
-            *div = '\0';
-            char left[MAX_LINE], right[MAX_LINE];
-            strcpy(left, term);
-            strcpy(right, div + 1);
-            trim(left); trim(right);
-            terms[term_count].is_mul = 0;
-            terms[term_count].is_div = 1;
-            terms[term_count].a = atoi(left);
-            terms[term_count].b = atoi(right);
-            terms[term_count].sign = sign;
-        } else {
-            terms[term_count].is_mul = 0;
-            terms[term_count].is_div = 0;
-            terms[term_count].val = atoi(term);
-            terms[term_count].sign = sign;
-        }
+        strncpy(term_str, term_start, len);
+        term_str[len] = '\0';
+        trim_whitespace(term_str);
+        if (strlen(term_str) == 0) continue;
+        parse_term(term_str, &terms[term_count], current_sign);
         term_count++;
     }
 
-    for (size_t i = 0; i < strlen(varname); i++) {
-        unsigned char c = (unsigned char)varname[i];
-        printf(">");
-        for (int j = 0; j < c && j < MAX_LOOP; j++) printf("+");
-        printf(".");
-    }
-    printf(">");
-    for (int i = 0; i < 61; i++) printf("+");
-    printf(".");
-    for (size_t i = 0; i < strlen(varname) + 1; i++) printf("<");
-    printf("[-]");
+    generate_varname_bf(varname);
 
     for (int i = 0; i < term_count; i++) {
         if (terms[i].is_mul) {
-            int A = terms[i].a;
-            int B = terms[i].b;
-            int S = terms[i].sign;
-            if (A < 0) A = -A, S = -S;
-            if (B < 0) B = -B, S = -S;
-            if (A > MAX_LOOP) A = MAX_LOOP;
-            if (B > MAX_LOOP) B = MAX_LOOP;
-
-         
-            printf(">[-]");          
-            for (int j = 0; j < B; j++) printf("+"); 
-            printf("[<");
-            for (int j = 0; j < A; j++) {
-                printf(S == 1 ? "+" : "-");
-            }
-            printf("> -]");
-            printf("<");
-        } else if (terms[i].is_div) {
-
-            int A = terms[i].a;
-            int B = terms[i].b;
-            int S = terms[i].sign;
-            if (A < 0) A = -A, S = -S;
-            if (B < 0) B = -B, S = -S;
-            if (A > MAX_LOOP) A = MAX_LOOP;
-            if (B > MAX_LOOP || B == 0) B = 1; 
-
-            printf(">>[-]");          
-            for (int j = 0; j < A; j++) printf("+"); 
-            printf(">[-]");            
-            printf(">[-]");            
-
-
-            printf("<<[");            
-            printf(">[-");            
-            for (int j = 0; j < B; j++) printf("-"); 
-            printf(">>+<<]");        
-            printf(">>[-]");         
-
-            printf(">>]");
-
-        
-            printf(">>");             
-            if (S == 1) {
-                printf("[>+<-]");     
-            } else {
-                printf("[>-<-]");     
-            }
-            printf("<<");             
-        } else {
-            int V = terms[i].val;
-            int S = terms[i].sign;
-            if (V < 0) V = -V, S = -S;
-            if (V > MAX_LOOP) V = MAX_LOOP;
-
-            if (S == 1) {
-                for (int j = 0; j < V; j++) printf("+");
-            } else {
-                for (int j = 0; j < V; j++) printf("-");
-            }
+            generate_mul_bf(terms[i].left, terms[i].right, terms[i].sign);
+        }
+        else if (terms[i].is_div) {
+            generate_div_bf(terms[i].left, terms[i].right, terms[i].sign);
+        }
+        else {
+            generate_val_bf(terms[i].left, terms[i].sign);
         }
     }
 
-    printf("\n"); 
+    printf("\n");
     return 0;
 }
